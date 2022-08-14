@@ -5,6 +5,10 @@
 //Moving away most of the mutexes
 //19,572,257 Hz
 
+//13,616,323 Hz
+//19,191,515 Hz
+//19,404,206 Hz
+
 //8253/8254 - Programmable Interval Timer (PIT)
 //https://stanislavs.org/helppc/8253.html
 //https://wiki.osdev.org/Pit
@@ -17,6 +21,7 @@ pub enum FlipFlop {
 }
 
 use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicU16,Ordering};
 use std::thread;
 use std::time;
 
@@ -40,17 +45,18 @@ enum Access {
   MSB,
   LSBThenMSB,
 }
-
+/*
 #[derive(Debug, Default)]
 struct Mutexed {
   output_latch: u16,
-}
+}*/
 
 #[derive(Debug)]
 struct Counter {
   access: Access,
   to_processor: mpsc::Sender<ChipMsg>,
-  output_latch: u16,
+//  mutex: Arc<Mutex<Mutexed>>,
+  output_latch: Arc<AtomicU16>,
   flip_flop: FlipFlop,  //This should only be true we read/wrote the LSB and are still waiting on MSB.
   low_count: u16,       //This should only be set with set_count(..) flip_flop Low.
   mode: Mode,
@@ -120,11 +126,12 @@ enum ChipMsg {
 /// Note that the CE (counting_element) cannot be written into; whenever a
 /// count is written, it is written into the CR (count_register).
 fn new_counter(select_counter: u8, messenger: mpsc::Sender<crate::Msg>) -> Counter {
-  let mutex_arc = Arc::new(Mutex::new(Mutexed { ..Default::default() }));
-  let mutex = Arc::clone(&mutex_arc);
+//  let mutex_arc = Arc::new(Mutex::new(Mutexed { ..Default::default() }));
+  let output_latch_arc = Arc::new(AtomicU16::new(0));
   
   let (to_processor, from_controller) = mpsc::channel();
   
+  let output_latch = Arc::clone(&output_latch_arc);
   thread::spawn(move || {
     let mut init_time = time::SystemTime::now();
     let mut ticks = 0 as u128;
@@ -171,29 +178,22 @@ fn new_counter(select_counter: u8, messenger: mpsc::Sender<crate::Msg>) -> Count
           panic!("{}", ticks/secs);
         }
 
-        let mut trigger_interrupt = false;
-        {
-          if count_big > ticks {
-            counting_element = (count_big - ticks) as u16;
-          } else {
-            if is_interrupt_mode {
-              counting_element = 0;
-              enabled = false;
-              trigger_interrupt = true;
+        if count_big > ticks {
+          counting_element = (count_big - ticks) as u16;
+        } else {
+          if is_interrupt_mode {
+            counting_element = 0;
+            enabled = false;
+            println!("Interrupting PIC");
+            let msg = crate::Msg::PIC(crate::PICMsg::PIT{select_counter});
+            messenger.send(msg).unwrap();
             } else {
-              //Start over again
-              counting_element = initial_count_register;
-            }
-          }
-          if !is_latched {
-            let mut locked = mutex.lock().unwrap();
-            (*locked).output_latch = counting_element;
+            //Start over again
+            counting_element = initial_count_register;
           }
         }
-        if trigger_interrupt {
-          println!("Interrupting PIC");
-          let msg = crate::Msg::PIC(crate::PICMsg::PIT{select_counter});
-          messenger.send(msg).unwrap();
+        if !is_latched {
+          output_latch.store(counting_element, Ordering::Relaxed);
         }
       }
     }
@@ -204,7 +204,7 @@ fn new_counter(select_counter: u8, messenger: mpsc::Sender<crate::Msg>) -> Count
     access: Default::default(),
     flip_flop: Default::default(),
     mode: Default::default(),
-    mutex: Arc::clone(&mutex_arc),
+    output_latch: Arc::clone(&output_latch_arc),
     low_count: 0,
   }
 }
@@ -287,26 +287,27 @@ impl PIT {
       debug!("Counter {}'s was given a flipflop low count {:X}", select_counter, counter.low_count);
     }
   }
+
   pub fn get_count(&mut self, select_counter: u8) -> u8 {
     let counter = self.get_counter(select_counter);
     
     let mut release_latch = true;
+    let output_latch = counter.output_latch.load(Ordering::Relaxed);
     let count_u8 = {
-      let locked = counter.mutex.lock().unwrap();
       match counter.access {
-        Access::LSB => (*locked).output_latch & 0xFF,
-        Access::MSB => (*locked).output_latch >> 8,
+        Access::LSB => output_latch & 0xFF,
+        Access::MSB => output_latch >> 8,
         Access::LSBThenMSB => match counter.flip_flop {
           FlipFlop::Low => {
             {
               release_latch = false;  //Don't release the latch yet, since we are only reading the low byte.
               counter.flip_flop = FlipFlop::High;
-              (*locked).output_latch & 0xFF
+              output_latch & 0xFF
             }
           },
           FlipFlop::High => {
             counter.flip_flop = FlipFlop::Low;
-            (*locked).output_latch >> 8
+            output_latch >> 8
           }
         },
       }
