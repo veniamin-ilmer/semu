@@ -30,21 +30,20 @@ pub fn run() -> io::Result<()> {
 //  f.read_to_end(&mut video_rom)?;
   let mut video_rom = Vec::new();
   
-  let (tx, rx) = mpsc::channel();
+  let (to_bus, from_chip) = mpsc::channel();
   
   let mut clock = clock::init(210); //4.77 Mhz = 210 nanosecond delay.
   let mut memory = memory1mb::start(&mut bios_rom, &mut video_rom);
-  let mut pic = pic::start(tx.clone());
+  let mut pic = pic::start(to_bus.clone());
   let mut dma = dma::start();
-  clock.add(4);
-  let mut pit = pit::start(tx.clone());
+  let mut pit = pit::start(to_bus.clone(), (clock.add(4), clock.add(4), clock.add(4)));
   let mut faraday = faraday::start();
   let mut graphics = graphics::start();
-  let mut cpu = cpu8086::start(tx.clone());
+  let mut cpu = cpu8086::start(to_bus.clone(), clock.add(1));
   clock.start();
 
   loop {
-    match rx.recv().unwrap() {
+    match from_chip.recv().unwrap() {
       crate::Msg::Memory(sub_msg) => memory.process_msg(sub_msg),
       crate::Msg::PIC(sub_msg) => pic.process_msg(sub_msg),
       crate::Msg::CPU(sub_msg) => cpu.process_msg(sub_msg),
@@ -67,9 +66,9 @@ pub fn run() -> io::Result<()> {
           0x0F => dma.set_masks(value),
           0x20 => pic.out_port_1(value),
           0x21 => pic.out_port_2(value),
-          0x40 => pit.set_count(0, value),
-          0x41 => pit.set_count(1, value),
-          0x42 => pit.set_count(2, value),
+          0x40 => pit.0.set_count(value),
+          0x41 => pit.1.set_count(value),
+          0x42 => pit.2.set_count(value),
           0x43 => pit.set_control_word(value),
           0x60 => faraday.write_port_a(value),
           0x61 => faraday.write_port_b(value),
@@ -103,7 +102,9 @@ pub fn run() -> io::Result<()> {
             0x08 => dma.get_status(),
             0x20 => pic.in_port_1(),
             0x21 => pic.get_irqs_enabled(),
-            0x41 => pit.get_count(1),
+            0x40 => pit.0.get_count(),
+            0x41 => pit.1.get_count(),
+            0x42 => pit.2.get_count(),
             0x60 => faraday.read_port_a(),
             0x61 => faraday.read_port_b(),
             0x62 => faraday.read_port_c(),
