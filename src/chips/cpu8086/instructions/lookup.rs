@@ -13,10 +13,10 @@ use log::{trace, log_enabled};
 
 use super::*;
 
-pub fn run_next_instruction(cpu: &mut super::super::CPU) -> bool {
+pub fn run_next_instruction(cpu: &mut super::super::CPU) -> usize {
   
   let mut next_segment = memory::Segment::DS; //This is for "ES:, CS:, DS:, SS:" commands for future memory lookup. Current memory lookup is in cpu.memory.current_segment
-  let mut hlt_wait = false;
+  let mut cycles = 2;
   
   cpu.current_address = cpu.memory.get_current_address();
   let op0 = cpu.memory.next_byte();
@@ -286,7 +286,6 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> bool {
     },
     0x9B => {
       trace!("{:05X}: WAIT", cpu.current_address);
-      hlt_wait = true;
     }
     0x9C => flag::pushf(cpu),
     0x9D => flag::popf(cpu),
@@ -500,7 +499,6 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> bool {
     0xF3 => jump::rep(cpu, true),
     0xF4 => {
       trace!("{:05X}: HLT", cpu.current_address);
-      hlt_wait = true;
     },
     0xF5 => flag::cmc(cpu),
     0xF6 => {
@@ -576,7 +574,7 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> bool {
   
   cpu.memory.current_segment = next_segment; //Remember for the next instruction
   
-  hlt_wait
+  cycles
 }
 
 //Pattern for many operations:
