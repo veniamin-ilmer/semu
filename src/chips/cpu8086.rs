@@ -1,6 +1,7 @@
 use crate::CPUMsg;
 
-use std::sync::{mpsc, Mutex, Arc};
+use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicI16,Ordering};
 
 use std::thread;
 
@@ -15,10 +16,6 @@ use definitions::flag::Flags;
 use log::debug;
 
 use simplelog::*;
-
-struct Mutexed {
-  interrupt: Option<u8>,
-}
   
 pub struct CPU {
   pub memory: Memory,
@@ -28,17 +25,10 @@ pub struct CPU {
   pub messenger: mpsc::Sender<crate::Msg>,
 }
 
-//use std::io;
-//use std::io::prelude::*;
 use std::fs::File;
 
-//use std::time::{Duration, SystemTime};
-
-pub fn start(messenger: mpsc::Sender<crate::Msg>) -> CPUController {
-
-  let mutex_arc = Arc::new(Mutex::new(Mutexed {
-    interrupt: None,
-  }));
+pub fn start(messenger: mpsc::Sender<crate::Msg>, from_clock: mpsc::Receiver<()>) -> CPUController {
+  let interrupt_arc = Arc::new(AtomicI16::new(-1));
   
   let memory = Memory {
     cs: 0xF000,
@@ -61,14 +51,12 @@ pub fn start(messenger: mpsc::Sender<crate::Msg>) -> CPUController {
     flags: Default::default(),
   };
   
-  let mutex = Arc::clone(&mutex_arc);
+  let interrupt = Arc::clone(&interrupt_arc);
   
   let mut logging = false;
   
   thread::spawn(move || {
-//    let now = SystemTime::now();
     loop {
-      thread::yield_now();  //Yield between each instruction to simulate 8086 speed better..
       cpu.memory.current_instruction = cpu.get_full_instruction();
       if cpu.memory.cs == 0xF000 && cpu.memory.ip == 0xE3C6 {
         logging = true;
@@ -89,51 +77,34 @@ pub fn start(messenger: mpsc::Sender<crate::Msg>) -> CPUController {
         cpu.print_registers();
       }
 
-      let hlt_wait = instructions::lookup::run_next_instruction(&mut cpu);
-      if hlt_wait { 
-/*      for i in 0..0x100 {
-        println!("{:04X}", cpu.memory.get_word_msg(definitions::memory::calculate_addr(0x0,i*2)));
-      }*/
-        break;
+      let cycles = instructions::lookup::run_next_instruction(&mut cpu);
+      for _ in 0..cycles {
+        from_clock.recv().unwrap();
       }
-      
-      //In case I got interrupted, I only should handle the interrupt after letting go of the lock.
-      let mut saved_interrupt = None;
-      {
-        let mut locked = mutex.lock().unwrap();
-        saved_interrupt = (*locked).interrupt;
-        (*locked).interrupt = None;
-      }
-      if let Some(index) = saved_interrupt {
-/*        if !logging {
-          logging = true;
-          CombinedLogger::init(
-            vec![
-                TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-                WriteLogger::new(LevelFilter::Trace, Config::default(), File::create("trace.log").unwrap()),
-            ]
-          ).unwrap();
-        }*/
-        instructions::jump::hardware_int(&mut cpu, index);
+
+      //-1 = no interrupt. Positive 8 bit = interrupt.
+      let int_index = interrupt.load(Ordering::Relaxed);
+      if int_index >= 0 {
+        interrupt.store(-1, Ordering::Relaxed);
+        instructions::jump::hardware_int(&mut cpu, int_index as u8);
       }
     }
   });
   
   CPUController {
-    mutex: Arc::clone(&mutex_arc),
+    interrupt: Arc::clone(&interrupt_arc),
   }
 }
 
 pub struct CPUController {
-  mutex: Arc<Mutex<Mutexed>>,
+  interrupt: Arc<AtomicI16>,  //-1 = no interrupt. Positive 8 bit = interrupt.
 }
 
 impl CPUController {
   pub fn process_msg(&mut self, msg: CPUMsg) {
     match msg {
       CPUMsg::Interrupt(index) => {
-        let mut locked = self.mutex.lock().unwrap();
-        (*locked).interrupt = Some(index);
+        self.interrupt.store(index as i16, Ordering::Relaxed);  //  //-1 = no interrupt. Positive 8 bit = interrupt.
       },
     }
   }
@@ -191,4 +162,3 @@ impl CPU {
     };
   }
 }
-
