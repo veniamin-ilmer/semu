@@ -121,7 +121,6 @@ impl CPU {
              self.memory.ds, self.memory.es, self.memory.ss, self.memory.cs, self.memory.ip, self.flags.carry, self.flags.parity, self.flags.adjust, self.flags.zero, self.flags.sign, self.flags.overflow);
   }
 
-
   pub fn get_full_instruction(&self) -> u64 {
     let addr = definitions::memory::calculate_addr(self.memory.cs, self.memory.ip);
     let (socket, rx) = mpsc::channel();
@@ -132,14 +131,14 @@ impl CPU {
 
   pub fn read_byte(&mut self, op: &operand::Byte) -> u8 {
     match op {
-      operand::Byte::Mem(addr, _) => self.memory.get_byte(*addr),
+      operand::Byte::Mem{addr, ..} => self.memory.get_byte(*addr),
       operand::Byte::Reg(reg) => self.regs.get_byte(reg),
       operand::Byte::Imm(imm) => *imm,
     }
   }
   pub fn read_word(&mut self, op: &operand::Word) -> u16 {
     match op {
-      operand::Word::Mem(addr, _) => self.memory.get_word(*addr),
+      operand::Word::Mem{addr, ..} => self.memory.get_word(*addr),
       operand::Word::Reg(reg) => self.regs.get_word(reg),
       operand::Word::Seg(seg) => self.memory.get_seg(seg),
       operand::Word::Imm(imm) => *imm,
@@ -148,17 +147,18 @@ impl CPU {
 
   pub fn write_byte(&mut self, op: &operand::Byte, value: u8) {
     match op {
-      operand::Byte::Mem(addr, _) => self.memory.set_byte(*addr, value),
+      operand::Byte::Mem{addr, ..} => self.memory.set_byte(*addr, value),
       operand::Byte::Reg(reg) => self.regs.set_byte(reg, value),
       operand::Byte::Imm(_) => panic!("Attemped write to imm."),
     };
   }
   pub fn write_word(&mut self, op: &operand::Word, value: u16) {
     match op {
-      operand::Word::Mem(addr, _) => self.memory.set_word(*addr, value),
+      operand::Word::Mem{addr, ..} => self.memory.set_word(*addr, value),
       operand::Word::Reg(reg) => self.regs.set_word(reg, value),
       operand::Word::Seg(seg) => self.memory.set_seg(seg, value),
       operand::Word::Imm(_) => panic!("Attemped write to imm."),
     };
   }
 }
+
