@@ -5,7 +5,7 @@ use log::Level::Trace;
 use log::{trace, log_enabled};
 
 //ASCII adjust After Addition
-pub fn aaa(cpu: &mut CPU) {
+pub fn aaa(cpu: &mut CPU) -> usize {
   if log_enabled!(Trace) { trace!("{:05X}: AAA", cpu.current_address); }
   let mut al = cpu.regs.get_byte(&register::Byte::AL);
   let mut ah = cpu.regs.get_byte(&register::Byte::AH);
@@ -20,10 +20,11 @@ pub fn aaa(cpu: &mut CPU) {
     cpu.flags.carry = false;
   }
   cpu.regs.set_byte(&register::Byte::AL, al & 0xF);
+  8
 }
 
 //ASCII adjust After Subtraction
-pub fn aas(cpu: &mut CPU) {
+pub fn aas(cpu: &mut CPU) -> usize {
   if log_enabled!(Trace) { trace!("{:05X}: AAS", cpu.current_address); }
   let mut al = cpu.regs.get_byte(&register::Byte::AL);
   let mut ah = cpu.regs.get_byte(&register::Byte::AH);
@@ -38,19 +39,21 @@ pub fn aas(cpu: &mut CPU) {
     cpu.flags.carry = false;
   }
   cpu.regs.set_byte(&register::Byte::AL, al & 0xF);
+  8
 }
 
 //ASCII adjust After Multiplication
-pub fn aam(cpu: &mut CPU) {
+pub fn aam(cpu: &mut CPU) -> usize {
   if log_enabled!(Trace) { trace!("{:05X}: AAM", cpu.current_address); }
   let al = cpu.regs.get_byte(&register::Byte::AL);
   cpu.regs.set_byte(&register::Byte::AH, al / 10);
   cpu.regs.set_byte(&register::Byte::AL, al % 10);
   cpu.flags.parity_zero_sign_byte(al / 10);  //TODO: Perhaps both AL and AH need to be included here?
+  83
 }
 
 //ASCII adjust before? Division
-pub fn aad(cpu: &mut CPU) {
+pub fn aad(cpu: &mut CPU) -> usize {
   if log_enabled!(Trace) { trace!("{:05X}: AAD", cpu.current_address); }
   let al = cpu.regs.get_byte(&register::Byte::AL);
   let ah = cpu.regs.get_byte(&register::Byte::AH);
@@ -58,10 +61,11 @@ pub fn aad(cpu: &mut CPU) {
   cpu.regs.set_byte(&register::Byte::AL, result);
   cpu.regs.set_byte(&register::Byte::AH, 0);
   cpu.flags.parity_zero_sign_byte(result);
+  60
 }
 
 //Decimal adjust After Addition
-pub fn daa(cpu: &mut CPU) {
+pub fn daa(cpu: &mut CPU) -> usize {
   if log_enabled!(Trace) { trace!("{:05X}: DAA", cpu.current_address); }
   let mut al = cpu.regs.get_byte(&register::Byte::AL);
   if (al & 0xF) > 9 || cpu.flags.adjust {
@@ -77,10 +81,11 @@ pub fn daa(cpu: &mut CPU) {
     cpu.flags.carry = false;
   }
   cpu.regs.set_byte(&register::Byte::AL, al);
+  4
 }
 
 //Decimal adjust After Subtraction
-pub fn das(cpu: &mut CPU) {
+pub fn das(cpu: &mut CPU)-> usize {
   if log_enabled!(Trace) { trace!("{:05X}: DAS", cpu.current_address); }
   let mut al = cpu.regs.get_byte(&register::Byte::AL);
   if (al & 0xF) > 9 || cpu.flags.adjust {
@@ -96,4 +101,5 @@ pub fn das(cpu: &mut CPU) {
     cpu.flags.carry = false;
   }
   cpu.regs.set_byte(&register::Byte::AL, al);
+  4
 }
