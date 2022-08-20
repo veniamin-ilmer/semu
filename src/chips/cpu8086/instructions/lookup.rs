@@ -62,6 +62,7 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> usize {
     0x26 => {
       if log_enabled!(Trace) { trace!("{:05X}: ES:", cpu.current_address); }
       next_segment = memory::Segment::ES;
+      2
     },
     0x27 => bcd::daa(cpu),
     0x28..=0x2D => {
@@ -73,6 +74,7 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> usize {
     0x2E => {
       if log_enabled!(Trace) { trace!("{:05X}: CS:", cpu.current_address); }
       next_segment = memory::Segment::CS;
+      2
     },
     0x2F => bcd::das(cpu),
     0x30..=0x35 => {
@@ -84,6 +86,7 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> usize {
     0x36 => {
       if log_enabled!(Trace) { trace!("{:05X}: SS:", cpu.current_address); }
       next_segment = memory::Segment::SS;
+      2
     },
     0x37 => bcd::aaa(cpu),
     0x38..=0x3D => {
@@ -95,6 +98,7 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> usize {
     0x3E => {
       if log_enabled!(Trace) { trace!("{:05X}: CS:", cpu.current_address); }
       next_segment = memory::Segment::CS;
+      2
     },
     0x3F => bcd::aas(cpu),
     0x40..=0x47 => math::inc_word(cpu, operand::Word::reg_index(op0 & 7)),
@@ -286,6 +290,7 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> usize {
     },
     0x9B => {
       trace!("{:05X}: WAIT", cpu.current_address);
+      panic!("Stop");
     }
     0x9C => flag::pushf(cpu),
     0x9D => flag::popf(cpu),
@@ -499,6 +504,7 @@ pub fn run_next_instruction(cpu: &mut super::super::CPU) -> usize {
     0xF3 => jump::rep(cpu, true),
     0xF4 => {
       trace!("{:05X}: HLT", cpu.current_address);
+      panic!("Stop");
     },
     0xF5 => flag::cmc(cpu),
     0xF6 => {
